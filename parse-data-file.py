@@ -1,54 +1,44 @@
-import os
-import glob
 import re
+from collections import namedtuple
+from pathlib import Path
+from collections import Counter
+from operator import attrgetter
 
-def parse_all_files(resultVar):
-    for filename in glob.iglob('*.txt'):
 
-        with open(filename, "r") as handler:  
-            for line in handler:
-    
-                if resultVar in line.lower():
+Record = namedtuple('Record', 'strategy, num, arena, seed, result')
 
-                    digits = re.findall(r'\d', line)
-                    result = ''.join(digits)
+PATTERN = re.compile(r'Result = (\d+)')
 
-                    strategy, num, arena, seed = os.path.basename(filename).split('_')
 
-                    yield dict(strategy=strategy, num=num, arena=arena, seed=seed, result=int(result))
+def parse(filename):
+    assert isinstance(filename, Path)
 
-def build_dict_sorted(field, resultVar):
-   parsed_dict = parse_all_files(resultVar)
-   return sorted(parsed_dict, key=lambda k: k[field])
-   
-def printFinalResultForField(field, resultVar):
-    dictList = build_dict_sorted(field, resultVar)
-    
-    finalDict = {}
-    finalDictList = []
-    count = 0
-    
-    for d in dictList:
-        if not finalDict:
-            finalDict[field] = d[field]
-    
-        if resultVar in finalDict:
-            if d[field] == finalDict[field]:
-                count = count + 1
-                finalDict[resultVar] = int(finalDict[resultVar]) + int(d[resultVar])
-            else:
-                finalDict['average'] = round(float(finalDict[resultVar]) / float(count), 2)
-                finalDictList.append(finalDict)
-                count = 1
-                finalDict = {}
-                finalDict[field] = d[field]
-                finalDict[resultVar] = int(d[resultVar])
-        else:
-            count = count + 1
-            finalDict[resultVar] = int(d[resultVar])
-    finalDict['average'] = round(float(finalDict[resultVar]) / float(count), 2)
-    finalDictList.append(finalDict)
-    print(finalDictList)
-    
-printFinalResultForField('arena', 'result')
-printFinalResultForField('strategy', 'result')
+    strategy, num, arena, seed = filename.stem.split('_')
+
+    with filename.open() as f:
+        match = re.search(PATTERN, f.read())
+
+        result = match.group(1) if match else 0
+
+    return Record(strategy, int(num), arena, int(seed), int(result))
+
+
+def aggregate(records, field):
+    getter = attrgetter(field)
+    d = Counter(getter(record) for record in records)
+    return d
+
+
+def findfiles(pattern='**/*.txt', source_dir='.'):
+    return Path(source_dir).glob(pattern)
+
+
+if __name__ == '__main__':
+    records = (parse(f) for f in findfiles())
+
+    arenas = aggregate(records, 'arena')
+    strategies = aggregate(records, 'strategy')
+
+    print(arenas)
+    assert arenas == {'Chigago': 2, 'michigan': 1, 'newOrleans': 3, 'newYork': 4}
+    assert strategies == {'buy': 2, 'give': 1, 'sell': 4, 'trade': 3}
